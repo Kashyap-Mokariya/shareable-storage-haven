@@ -133,11 +133,22 @@ const Index = () => {
     if (!selectedFileId || !shareEmail) return;
 
     try {
+      // Get the current shared_with array
+      const { data: currentFile, error: fetchError } = await supabase
+        .from("files")
+        .select("shared_with")
+        .eq("id", selectedFileId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Create new array with the new email
+      const updatedSharedWith = [...(currentFile?.shared_with || []), shareEmail];
+
+      // Update the record with the new array
       const { error } = await supabase
         .from("files")
-        .update({
-          shared_with: supabase.sql`array_append(shared_with, ${shareEmail})`,
-        })
+        .update({ shared_with: updatedSharedWith })
         .eq("id", selectedFileId);
 
       if (error) throw error;
