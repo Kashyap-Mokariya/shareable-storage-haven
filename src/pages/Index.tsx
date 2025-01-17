@@ -78,42 +78,52 @@ const Index = () => {
   }, [navigate, searchParams]);
 
   const fetchFiles = async ({ fileType, searchQuery, sortBy = "created_at", limit }: FetchFilesParams = {}) => {
-    if (!user?.email) return;
+    if (!user?.id || !user?.email) return;
 
-    let query = supabase
-      .from("files")
-      .select("*")
-      .or(`user_id.eq.${user.id},shared_with.cs.{${user.email}}`);
+    try {
+      let query = supabase
+        .from("files")
+        .select("*")
+        .or(`user_id.eq.${user.id},shared_with.cs.{${user.email}}`);
 
-    // Apply filters if provided
-    if (fileType) {
-      query = query.eq('type', fileType);
-    }
+      // Apply filters if provided
+      if (fileType) {
+        query = query.eq('type', fileType);
+      }
 
-    if (searchQuery) {
-      query = query.ilike('filename', `%${searchQuery}%`);
-    }
+      if (searchQuery) {
+        query = query.ilike('filename', `%${searchQuery}%`);
+      }
 
-    // Apply sorting
-    query = query.order(sortBy, { ascending: false });
+      // Apply sorting - only allow certain columns to be sorted
+      const allowedSortColumns = ['created_at', 'filename', 'type'];
+      const finalSortBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
+      query = query.order(finalSortBy, { ascending: false });
 
-    // Apply limit if provided
-    if (limit) {
-      query = query.limit(limit);
-    }
+      // Apply limit if provided (with a reasonable max limit)
+      if (limit && limit > 0 && limit <= 100) {
+        query = query.limit(limit);
+      }
 
-    const { data, error } = await query;
+      const { data, error } = await query;
 
-    if (error) {
+      if (error) {
+        toast({
+          title: "Error fetching files",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setFiles(data || []);
+    } catch (error: any) {
       toast({
         title: "Error fetching files",
         description: error.message,
         variant: "destructive",
       });
-      return;
     }
-
-    setFiles(data || []);
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
