@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,8 +25,16 @@ interface FileRecord {
   created_at: string;
 }
 
+interface FetchFilesParams {
+  fileType?: string;
+  searchQuery?: string;
+  sortBy?: string;
+  limit?: number;
+}
+
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [user, setUser] = useState<User | null>(null);
@@ -46,7 +54,19 @@ const Index = () => {
     };
 
     checkUser();
-    fetchFiles();
+    
+    // Get query parameters
+    const query = searchParams.get("query") || "";
+    const type = searchParams.get("type") || "";
+    const sort = searchParams.get("sort") || "created_at";
+    const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : undefined;
+
+    fetchFiles({ 
+      fileType: type || undefined,
+      searchQuery: query || undefined,
+      sortBy: sort,
+      limit
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
@@ -55,13 +75,34 @@ const Index = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
-  const fetchFiles = async () => {
-    const { data, error } = await supabase
+  const fetchFiles = async ({ fileType, searchQuery, sortBy = "created_at", limit }: FetchFilesParams = {}) => {
+    if (!user?.email) return;
+
+    let query = supabase
       .from("files")
       .select("*")
-      .order("created_at", { ascending: false });
+      .or(`user_id.eq.${user.id},shared_with.cs.{${user.email}}`);
+
+    // Apply filters if provided
+    if (fileType) {
+      query = query.eq('type', fileType);
+    }
+
+    if (searchQuery) {
+      query = query.ilike('filename', `%${searchQuery}%`);
+    }
+
+    // Apply sorting
+    query = query.order(sortBy, { ascending: false });
+
+    // Apply limit if provided
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       toast({
